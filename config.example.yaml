@@ -1,0 +1,70 @@
+# cxscan — hybrid scan orchestrator config.
+# Posture: "no source code leaves" (SCA Resolver sends dependency METADATA to cloud).
+# This is NOT an air-gapped / zero-egress config. Do not market it as such.
+#
+# Credentials: do NOT commit real secrets here. Any value of the form ${ENV_VAR}
+# is read from the environment at runtime. The UI never renders these back.
+
+input:
+  # One git address in. The tool clones ONCE, then scans the local working copy
+  # with every engine (SCA Resolver requires a local folder, not a URL).
+  git_url: "https://git.internal.example.com/team/app.git"
+  git_ref: "main"
+  # Shallow clone breaks 2ms commit-history and SCA delta. Use full clone if you
+  # enable 2ms history scanning. 0 == full.
+  clone_depth: 0
+  git_auth:
+    username: "${GIT_USER}"
+    token: "${GIT_TOKEN}"
+
+engines:
+  sast:                         # CxSAST on-prem 9.x via REST API
+    enabled: true
+    # URL + creds are set live in the Setup tab (backend mints the token); these
+    # are fallbacks. team_id is surfaced by the Setup connection test — set it here.
+    server_url: "https://cxsast.internal.example.com"
+    username: "${CXSAST_USER}"
+    password: "${CXSAST_PASSWORD}"
+    project_name: "AVTU-app"
+    team_id: 1                   # CxSAST team/owningTeam id (get via /cxrestapi/auth/teams)
+    incremental: false
+    timeout_s: 3600
+    reports: [xml, pdf]         # xml feeds the dashboard; pdf is the human artifact
+    threshold:                  # gate fails if counts at/above severity are exceeded
+      High: 0
+      Medium: 10
+
+  sca:                          # SCA via CxOne `cx` CLI + Resolver (offline)
+    enabled: true
+    # Auth (CxOne API key) is set live in the Setup tab; it auto-derives base_uri
+    # + tenant. These are only fallbacks if you skip the Setup connection.
+    cx_path: "cx"               # Checkmarx One CLI on PATH
+    resolver_path: "/opt/cx/ScaResolver"
+    project_name: "AVTU-app"
+    branch: "main"
+    no_upload_manifest: true    # minimise egress; dependency metadata still leaves
+    reports: [json, pdf]        # json feeds the dashboard
+    threshold:
+      Critical: 0
+      High: 5
+
+  kics:                         # OSS, fully local
+    enabled: true
+    reports: [json, sarif, pdf] # sarif REQUIRED for dashboard
+    exclude_severities: [info, trace]
+    threshold:
+      High: 0
+      Medium: 25
+
+  twoms:                        # OSS, fully local. JSON/SARIF only — no PDF.
+    enabled: true
+    scan_git_history: false     # true requires a full clone (see clone_depth)
+    reports: [json, sarif]      # sarif REQUIRED for dashboard
+    threshold:
+      High: 0                   # 2ms severity derives from CVSS-based score
+
+output:
+  results_dir: "./runs"
+  # 2ms findings contain the location of real leaked secrets. Redact value
+  # snippets in the dashboard; restrict who can open the run.
+  redact_secret_values: true

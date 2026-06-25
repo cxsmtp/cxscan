@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cxscan · scan console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0f1318; --panel:#161b22; --panel-2:#1b212b; --line:#262e3a;
+    --ink:#e8ebef; --ink-dim:#9aa6b2; --ink-faint:#5e6975;
+    --accent:#5ad1c4;                      /* cyan-teal, used sparingly */
+    --info:#5e6975; --low:#5b8fb0; --medium:#d6a234;
+    --high:#e2683b; --critical:#e3457a;
+    --pass:#46b98a; --fail:#e3457a; --run:#5ad1c4;
+    --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+    --disp:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--disp);
+    -webkit-font-smoothing:antialiased;line-height:1.45}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 22px 80px}
+  header{display:flex;align-items:baseline;justify-content:space-between;
+    gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:18px}
+  .brand{font-weight:700;font-size:22px;letter-spacing:-.02em}
+  .brand b{color:var(--accent)}
+  .sub{font-family:var(--mono);font-size:12px;color:var(--ink-faint);
+    text-transform:uppercase;letter-spacing:.14em}
+  .controls{display:flex;gap:10px;align-items:center;font-family:var(--mono);font-size:13px}
+  input[type=text]{background:var(--panel-2);border:1px solid var(--line);
+    color:var(--ink);font-family:var(--mono);font-size:13px;padding:9px 11px;
+    border-radius:7px;width:280px;max-width:50vw}
+  button{background:var(--accent);color:#06201d;border:0;font-family:var(--mono);
+    font-weight:700;font-size:13px;padding:9px 16px;border-radius:7px;cursor:pointer;
+    letter-spacing:.02em}
+  button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button.ghost{background:transparent;color:var(--ink-dim);border:1px solid var(--line)}
+
+  /* Gate verdict — the headline state */
+  .verdict{margin:24px 0 8px;border:1px solid var(--line);border-radius:12px;
+    padding:18px 20px;display:flex;align-items:center;gap:18px;background:var(--panel)}
+  .verdict .dot{width:14px;height:14px;border-radius:50%}
+  .verdict .label{font-family:var(--mono);font-size:12px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--ink-faint)}
+  .verdict .state{font-size:26px;font-weight:700;letter-spacing:-.02em}
+  .verdict .meta{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--ink-dim);text-align:right}
+  .v-pass{color:var(--pass)} .v-fail{color:var(--fail)} .v-run{color:var(--run)}
+
+  /* The signature: four engine lanes as a parallel pipeline */
+  .lanes{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0 6px}
+  .lane{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    padding:14px 14px 12px;position:relative;overflow:hidden}
+  .lane .top{display:flex;align-items:center;justify-content:space-between}
+  .lane .name{font-weight:700;letter-spacing:-.01em}
+  .lane .kind{font-family:var(--mono);font-size:10px;color:var(--ink-faint);
+    text-transform:uppercase;letter-spacing:.12em}
+  .lane .status{font-family:var(--mono);font-size:11px;margin-top:2px;color:var(--ink-dim);
+    text-transform:uppercase;letter-spacing:.1em}
+  .lane .nums{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:11px;font-weight:500;padding:3px 7px;
+    border-radius:5px;background:var(--panel-2);border:1px solid var(--line)}
+  .chip .n{font-weight:700}
+  .gate{position:absolute;top:13px;right:13px;width:9px;height:9px;border-radius:50%}
+  .running{background:linear-gradient(90deg,transparent,rgba(90,209,196,.14),transparent);
+    background-size:200% 100%;animation:sweep 1.4s linear infinite}
+  @keyframes sweep{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  .pulse{animation:pulse 1.2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  .sev-INFO{color:var(--info)} .sev-LOW{color:var(--low)} .sev-MEDIUM{color:var(--medium)}
+  .sev-HIGH{color:var(--high)} .sev-CRITICAL{color:var(--critical)}
+  .bg-INFO{background:var(--info)} .bg-LOW{background:var(--low)}
+  .bg-MEDIUM{background:var(--medium)} .bg-HIGH{background:var(--high)} .bg-CRITICAL{background:var(--critical)}
+
+  h2{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.14em;
+    color:var(--ink-faint);margin:34px 0 12px;font-weight:500}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-family:var(--mono);font-size:11px;text-transform:uppercase;
+    letter-spacing:.1em;color:var(--ink-faint);font-weight:500;padding:8px 10px;
+    border-bottom:1px solid var(--line)}
+  td{padding:9px 10px;border-bottom:1px solid var(--panel-2);vertical-align:top}
+  tr:hover td{background:var(--panel)}
+  .sev-tag{font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 7px;
+    border-radius:4px;color:#0c0f13;letter-spacing:.04em}
+  .eng-tag{font-family:var(--mono);font-size:10px;color:var(--ink-dim);
+    text-transform:uppercase;letter-spacing:.08em}
+  .loc{font-family:var(--mono);font-size:11px;color:var(--ink-dim);word-break:break-all}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-family:var(--mono);font-size:12px}
+  .filters span{padding:5px 10px;border:1px solid var(--line);border-radius:6px;cursor:pointer;color:var(--ink-dim)}
+  .filters span.on{border-color:var(--accent);color:var(--ink)}
+  .empty{color:var(--ink-faint);font-family:var(--mono);font-size:13px;padding:30px 0}
+  .note{font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:6px}
+  @media (max-width:760px){.lanes{grid-template-columns:repeat(2,1fr)}}
+  @media (prefers-reduced-motion:reduce){.running,.pulse{animation:none}}
+
+  /* tabs */
+  .tabs{display:flex;gap:4px;margin:20px 0 4px;border-bottom:1px solid var(--line)}
+  .tab{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink-faint);padding:10px 14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.on{color:var(--ink);border-bottom-color:var(--accent)}
+  .panel{display:none} .panel.on{display:block}
+  /* setup */
+  .toolrow{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);
+    border-radius:9px;background:var(--panel);margin-bottom:8px;flex-wrap:wrap}
+  .toolrow .nm{font-weight:700;min-width:70px}
+  .toolrow .vr{font-family:var(--mono);font-size:11px;color:var(--ink-dim);flex:1;min-width:140px}
+  .pill{font-family:var(--mono);font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.06em}
+  .pill.ok{background:rgba(70,185,138,.16);color:var(--pass)}
+  .pill.no{background:rgba(227,69,122,.14);color:var(--fail)}
+  .cmd{font-family:var(--mono);font-size:11px;background:var(--bg);border:1px solid var(--line);
+    border-radius:6px;padding:6px 9px;color:var(--ink-dim);width:100%;margin-top:6px;overflow-x:auto;white-space:nowrap}
+  .small{font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin:2px 0 14px}
+  /* connections */
+  .conns{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:22px}
+  .conn{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px}
+  .conn h3{margin:0 0 3px;font-size:15px;letter-spacing:-.01em}
+  .conn .desc{font-family:var(--mono);font-size:10px;color:var(--ink-faint);margin-bottom:13px;text-transform:uppercase;letter-spacing:.08em}
+  .field{margin-bottom:9px}
+  .field label{display:block;font-family:var(--mono);font-size:10px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
+  .field input{width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+    font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:6px}
+  .conn .row{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+  .conn .out{font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-top:9px;line-height:1.6;word-break:break-all}
+  .conn .out b{color:var(--ink)}
+  .secnote{font-family:var(--mono);font-size:10px;color:var(--ink-faint);border-left:2px solid var(--medium);padding-left:9px;margin-bottom:16px}
+  @media (max-width:760px){.conns{grid-template-columns:1fr}}
+  /* pipeline */
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;font-family:var(--mono);font-size:12px}
+  .seg button{background:transparent;color:var(--ink-dim);border:0;border-radius:0;padding:8px 16px;font-weight:500}
+  .seg button.on{background:var(--accent);color:#06201d;font-weight:700}
+  pre.snip{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:16px;
+    font-family:var(--mono);font-size:12px;line-height:1.55;color:var(--ink);overflow-x:auto;margin-top:12px;white-space:pre}
+
+  /* launch form */
+  .launch{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px;margin:18px 0}
+  .launch .grid{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-bottom:12px}
+  .launch input{width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+    font-family:var(--mono);font-size:12px;padding:9px 11px;border-radius:7px}
+  .engsel{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .engsel label{font-family:var(--mono);font-size:12px;color:var(--ink-dim);border:1px solid var(--line);
+    border-radius:7px;padding:7px 11px;cursor:pointer;display:flex;align-items:center;gap:7px;user-select:none}
+  .engsel label.on{border-color:var(--accent);color:var(--ink)}
+  .engsel input{accent-color:var(--accent)}
+  .launch .go{display:flex;align-items:center;gap:12px}
+  .gitchip{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+
+  /* activity console */
+  .activity{background:#0b0e12;border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+    font-family:var(--mono);font-size:12px;line-height:1.7;max-height:220px;overflow-y:auto;margin:10px 0}
+  .activity .ln{display:flex;gap:10px}
+  .activity .t{color:var(--ink-faint);min-width:58px}
+  .activity .e{font-weight:700;min-width:48px;text-transform:uppercase;font-size:10px;letter-spacing:.06em}
+  .activity .m{color:var(--ink-dim)}
+  .lane .elapsed{position:absolute;bottom:11px;right:13px;font-family:var(--mono);font-size:10px;color:var(--ink-faint)}
+  tr.frow{cursor:pointer}
+
+  /* detail drawer */
+  .drawer{position:fixed;top:0;right:0;height:100vh;width:min(520px,92vw);background:var(--panel);
+    border-left:1px solid var(--line);box-shadow:-20px 0 60px rgba(0,0,0,.45);transform:translateX(100%);
+    transition:transform .22s ease;z-index:50;overflow-y:auto;padding:22px}
+  .drawer.on{transform:translateX(0)}
+  @media (prefers-reduced-motion:reduce){.drawer{transition:none}}
+  .drawer .x{position:absolute;top:16px;right:18px;background:transparent;border:1px solid var(--line);
+    color:var(--ink-dim);border-radius:6px;padding:5px 10px;font-family:var(--mono);font-size:12px}
+  .drawer h2{margin:0 0 4px;font-family:var(--disp);font-size:19px;text-transform:none;letter-spacing:-.01em;color:var(--ink)}
+  .drawer .kv{font-family:var(--mono);font-size:12px;color:var(--ink-dim);margin:14px 0;line-height:1.8}
+  .drawer .kv b{color:var(--ink)}
+  .drawer .sec{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.14em;
+    color:var(--ink-faint);margin:20px 0 8px;border-top:1px solid var(--line);padding-top:14px}
+  .flow{list-style:none;padding:0;margin:0;counter-reset:n}
+  .flow li{font-family:var(--mono);font-size:11px;color:var(--ink-dim);padding:6px 0 6px 26px;position:relative;border-left:1px solid var(--line);margin-left:6px}
+  .flow li:before{counter-increment:n;content:counter(n);position:absolute;left:-9px;top:6px;width:16px;height:16px;
+    background:var(--panel-2);border:1px solid var(--line);border-radius:50%;font-size:9px;display:flex;align-items:center;justify-content:center;color:var(--ink-faint)}
+  .flow li.src{color:var(--high)} .flow li.snk{color:var(--critical)}
+  .drawer .desc{font-family:var(--mono);font-size:12px;color:var(--ink-dim);line-height:1.65;white-space:pre-wrap}
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none}
+  .scrim.on{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="brand">cx<b>scan</b></div>
+      <div class="sub">hybrid scan console · sast · sca · kics · 2ms</div>
+    </div>
+    <div class="controls">
+      <button id="demo" class="ghost">Demo data</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab on" data-tab="scan">Scan</div>
+    <div class="tab" data-tab="setup">Setup</div>
+    <div class="tab" data-tab="pipeline">Pipeline</div>
+  </div>
+
+  <div class="panel on" id="panel-scan">
+  <div class="launch">
+    <div class="grid">
+      <input id="git" type="text" placeholder="https://github.com/org/repo.git">
+      <input id="ref" type="text" placeholder="branch (default main)" value="main">
+    </div>
+    <div class="engsel" id="engsel">
+      <label class="on"><input type="checkbox" value="sast" checked> SAST</label>
+      <label class="on"><input type="checkbox" value="sca" checked> SCA</label>
+      <label class="on"><input type="checkbox" value="kics" checked> KICS</label>
+      <label class="on"><input type="checkbox" value="twoms" checked> 2ms</label>
+    </div>
+    <div class="go">
+      <button id="run">Start scan</button>
+      <span class="gitchip" id="gitchip">git auth: not configured</span>
+    </div>
+  </div>
+
+  <div class="verdict" id="verdict">
+    <span class="dot bg-INFO" id="vdot"></span>
+    <div><div class="label">gate verdict</div><div class="state v-run" id="vstate">idle</div></div>
+    <div class="meta" id="vmeta">no scan running</div>
+  </div>
+  <div class="note">Posture: no source code leaves. SCA Resolver sends dependency metadata to the cloud — this is not an air-gapped run.</div>
+
+  <div class="lanes" id="lanes"></div>
+
+  <div class="activity" id="activity" style="display:none"></div>
+
+  <h2>findings <span id="fcount" style="color:var(--ink-dim)"></span></h2>
+  <div class="filters" id="filters"></div>
+  <div id="ftable"></div>
+  </div><!-- /panel-scan -->
+
+  <div class="panel" id="panel-setup">
+    <div class="secnote">Credentials are held in memory only — never written to disk or shown back here. Add real auth + a secret store before hosting this for anyone but yourself.</div>
+
+    <div class="conns">
+      <div class="conn">
+        <h3>CxSAST (on-prem)</h3>
+        <div class="desc">url + user + password → backend mints token</div>
+        <div class="field"><label>Server URL</label><input id="sast-url" type="text" placeholder="https://cxsast.internal"></div>
+        <div class="field"><label>Username</label><input id="sast-user" type="text" autocomplete="off"></div>
+        <div class="field"><label>Password</label><input id="sast-pass" type="password" autocomplete="new-password"></div>
+        <div class="row"><button id="sast-connect">Test &amp; connect</button><span id="sast-chip"></span></div>
+        <div class="out" id="sast-out"></div>
+      </div>
+
+      <div class="conn">
+        <h3>Checkmarx One (SCA)</h3>
+        <div class="desc">one api key → auto-derives tenant + urls</div>
+        <div class="field"><label>API Key</label><input id="cx-key" type="password" autocomplete="new-password" placeholder="paste CxOne API key"></div>
+        <div class="row"><button id="cx-connect">Test &amp; connect</button><span id="cx-chip"></span></div>
+        <div class="out" id="cx-out">The key encodes your IAM URL and tenant — nothing else to enter.</div>
+      </div>
+
+      <div class="conn">
+        <h3>Git (any provider)</h3>
+        <div class="desc">github · gitlab · bitbucket · on-prem — https + token</div>
+        <div class="field"><label>A repo URL to test</label><input id="git-url" type="text" placeholder="https://github.com/org/repo.git"></div>
+        <div class="field"><label>Username</label><input id="git-user" type="text" autocomplete="off"></div>
+        <div class="field"><label>Token / PAT</label><input id="git-token" type="password" autocomplete="new-password"></div>
+        <div class="row"><button id="git-connect">Test &amp; connect</button><span id="git-chip"></span></div>
+        <div class="out" id="git-out">Token is used as the password over HTTPS. Stored per host.</div>
+      </div>
+    </div>
+
+    <div class="small">Scanners (kics, 2ms) download from GitHub with checksum verification. Package managers are detected and guided — on a locked-down or air-gapped host you likely can't install them here; run SCA on a build agent that has them.</div>
+    <div id="setup-list"><div class="empty">Loading environment check…</div></div>
+  </div>
+
+  <div class="panel" id="panel-pipeline">
+    <div class="small">Same four engines for your existing CI. Copy into your pipeline; gates mirror your console thresholds. Secrets come from the CI credential store, never inline.</div>
+    <div class="seg" id="seg-provider">
+      <button class="on" data-p="jenkins">Jenkins</button>
+      <button data-p="azure">Azure DevOps</button>
+    </div>
+    <button class="ghost" id="copy-snip" style="margin-left:10px">Copy</button>
+    <pre class="snip" id="snip">Select a provider…</pre>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer">
+  <button class="x" id="drawer-x">close</button>
+  <div id="drawer-body"></div>
+</div>
+
+<script>
+const ENGINES = {sast:"SAST",sca:"SCA",kics:"KICS",twoms:"2MS"};
+const KIND = {sast:"on-prem · cxsast",sca:"resolver · metadata egress",kics:"local · iac",twoms:"local · secrets"};
+const SEVS = ["CRITICAL","HIGH","MEDIUM","LOW","INFO"];
+let active = null, timer = null, sevFilter = new Set(SEVS), ALLF = [];
+
+const DEMO = {
+  status:"completed", overall_gate:"fail", started:"2026-06-25T09:12:00Z",
+  engines:{
+    sast:{status:"done",gate:"fail",gate_reasons:["3 finding(s) >= HIGH (limit 0)"],
+      counts:{HIGH:3,MEDIUM:7,LOW:4},started:"2026-06-25T09:12:01Z",finished:"2026-06-25T09:18:40Z",
+      findings:[{engine:"sast",severity:"HIGH",title:"SQL Injection",file:"src/dao/UserDao.java",line:88,rule_id:"SQL_Injection",
+        description:"Tainted input flows into a SQL query without sanitization.",
+        extra:{flow_length:3,flow:[{name:"request.getParameter",file:"src/web/Login.java",line:24},
+          {name:"username",file:"src/svc/Auth.java",line:51},{name:"stmt.execute",file:"src/dao/UserDao.java",line:88}]}},
+        {engine:"sast",severity:"HIGH",title:"Stored XSS",file:"src/web/Profile.jsp",line:42,rule_id:"Stored_XSS"},
+        {engine:"sast",severity:"MEDIUM",title:"Trust Boundary Violation",file:"src/api/Auth.java",line:140,rule_id:"Trust_Boundary"}]},
+    sca:{status:"done",gate:"fail",gate_reasons:["1 finding(s) >= CRITICAL (limit 0)"],
+      counts:{CRITICAL:1,HIGH:4,MEDIUM:6},started:"2026-06-25T09:12:01Z",finished:"2026-06-25T09:14:02Z",
+      findings:[{engine:"sca",severity:"CRITICAL",title:"log4j-core@2.14.1: CVE-2021-44228",file:"log4j-core",line:null,rule_id:"CVE-2021-44228",
+        description:"Remote code execution via JNDI lookup (Log4Shell).",
+        extra:{package:"log4j-core",version:"2.14.1",cve:"CVE-2021-44228",cvss:10.0,fixed_version:"2.17.1",
+          references:["https://nvd.nist.gov/vuln/detail/CVE-2021-44228"]}},
+        {engine:"sca",severity:"HIGH",title:"jackson-databind@2.9.8: CVE-2019-12384",file:"jackson-databind",line:null,rule_id:"CVE-2019-12384"}]},
+    kics:{status:"done",gate:"pass",gate_reasons:[],counts:{HIGH:0,MEDIUM:5,LOW:9},
+      findings:[{engine:"kics",severity:"MEDIUM",title:"S3 Bucket Without Encryption",file:"infra/s3.tf",line:12,rule_id:"kics-s3-enc"},
+        {engine:"kics",severity:"MEDIUM",title:"Security Group Allows 0.0.0.0/0",file:"infra/sg.tf",line:31,rule_id:"kics-sg-open"}]},
+    twoms:{status:"done",gate:"fail",gate_reasons:["2 finding(s) >= HIGH (limit 0)"],counts:{HIGH:2,MEDIUM:1},
+      findings:[{engine:"twoms",severity:"HIGH",title:"AWS Access Key",file:".env.bak",line:3,rule_id:"aws-access-token"},
+        {engine:"twoms",severity:"HIGH",title:"GitHub PAT",file:"scripts/deploy.sh",line:17,rule_id:"github-pat"}]}}
+};
+
+function statusWord(e){return (e.status||"pending").toUpperCase();}
+function laneClass(e){return e.status==="running"?"lane running":"lane";}
+
+function render(scan){
+  const engs = scan.engines||{};
+  // verdict
+  const g = scan.overall_gate, running = scan.status==="scanning"||scan.status==="starting";
+  const vdot=document.getElementById("vdot"), vstate=document.getElementById("vstate"), vmeta=document.getElementById("vmeta");
+  vstate.className="state "+(running?"v-run":(g==="pass"?"v-pass":g==="fail"?"v-fail":"v-run"));
+  vstate.textContent = running?"scanning…":(g?g.toUpperCase():(scan.status||"idle"));
+  vdot.className="dot "+(running?"bg-MEDIUM pulse":(g==="pass"?"bg-INFO":"bg-CRITICAL"));
+  vdot.style.background = running?"var(--run)":(g==="pass"?"var(--pass)":g==="fail"?"var(--fail)":"var(--info)");
+  const failed = Object.entries(engs).filter(([k,e])=>e.gate==="fail").map(([k])=>ENGINES[k]);
+  vmeta.innerHTML = scan.started?("started "+scan.started.replace("T"," ").replace("Z"," UTC")+(failed.length?("<br>gate failed: "+failed.join(", ")):"")):"no scan running";
+
+  // lanes
+  document.getElementById("lanes").innerHTML = Object.keys(ENGINES).map(k=>{
+    const e = engs[k]; if(!e) return "";
+    const nums = SEVS.filter(s=>(e.counts||{})[s]).map(s=>`<span class="chip"><span class="n sev-${s}">${e.counts[s]}</span> ${s[0]}</span>`).join("");
+    const gateColor = e.gate==="pass"?"var(--pass)":e.gate==="fail"?"var(--fail)":e.status==="running"?"var(--run)":"var(--line)";
+    const stat = e.status==="running"?`<span class="pulse">running…</span>`:statusWord(e);
+    return `<div class="${laneClass(e)}">
+      <span class="gate" style="background:${gateColor}"></span>
+      <div class="top"><span class="name">${ENGINES[k]}</span></div>
+      <div class="kind">${KIND[k]}</div>
+      <div class="status">${stat}</div>
+      <div class="nums">${nums||'<span class="chip" style="color:var(--ink-faint)">—</span>'}</div>
+      <span class="elapsed">${elapsed(e)}</span>
+    </div>`;
+  }).join("");
+
+  // live activity console (clone steps + each engine's log)
+  renderActivity(scan);
+
+  // findings (merged)
+  let all=[];
+  for(const k in engs){(engs[k].findings||[]).forEach(f=>all.push(f));}
+  all.sort((a,b)=>SEVS.indexOf(a.severity)-SEVS.indexOf(b.severity));
+  ALLF = all;
+  document.getElementById("fcount").textContent = all.length?`· ${all.length} total`:"";
+  document.getElementById("filters").innerHTML = SEVS.map(s=>{
+    const n = all.filter(f=>f.severity===s).length;
+    return `<span class="${sevFilter.has(s)?'on':''}" data-s="${s}"><span class="sev-${s}">●</span> ${s} ${n}</span>`;
+  }).join("");
+  document.querySelectorAll('.filters span').forEach(el=>el.onclick=()=>{
+    const s=el.dataset.s; sevFilter.has(s)?sevFilter.delete(s):sevFilter.add(s); render(active||scan);
+  });
+  const rows = all.map((f,i)=>({f,i})).filter(x=>sevFilter.has(x.f.severity));
+  document.getElementById("ftable").innerHTML = rows.length? `<table><thead><tr>
+    <th>severity</th><th>engine</th><th>finding</th><th>location</th></tr></thead><tbody>${
+    rows.map(({f,i})=>`<tr class="frow" data-idx="${i}">
+      <td><span class="sev-tag bg-${f.severity}">${f.severity}</span></td>
+      <td><span class="eng-tag">${ENGINES[f.engine]||f.engine}</span></td>
+      <td>${f.title||f.rule_id||''}</td>
+      <td class="loc">${f.file||''}${f.line?(':'+f.line):''}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="empty">No findings at the selected severities.</div>`;
+  document.querySelectorAll('tr.frow').forEach(tr=>tr.onclick=()=>openDrawer(ALLF[+tr.dataset.idx]));
+}
+
+// ---- elapsed + activity + drawer --------------------------------------------
+function elapsed(e){
+  if(!e.started) return "";
+  const end = e.finished?new Date(e.finished):new Date();
+  const s = Math.max(0, Math.round((end-new Date(e.started))/1000));
+  return e.status==="pending"?"":`${s}s`;
+}
+function renderActivity(scan){
+  const box=document.getElementById("activity");
+  const lines=[];
+  (scan.clone_log||[]).forEach(m=>lines.push(["git",m]));
+  for(const k in (scan.engines||{})){
+    (scan.engines[k].log||[]).forEach(m=>lines.push([k,m]));
+    const e=scan.engines[k];
+    if(e.status==="failed"&&e.error) lines.push([k,"ERROR: "+e.error]);
+  }
+  if(scan.error) lines.push(["scan","ERROR: "+scan.error]);
+  if(!lines.length){box.style.display="none";return;}
+  box.style.display="block";
+  box.innerHTML=lines.map(([e,m])=>`<div class="ln"><span class="e ${m.startsWith('ERROR')?'sev-CRITICAL':''}">${ENGINES[e]||e}</span><span class="m">${m}</span></div>`).join("");
+  box.scrollTop=box.scrollHeight;
+}
+
+function row(label,val){return val?`<div>${label}: <b>${val}</b></div>`:"";}
+function openDrawer(f){
+  if(!f) return;
+  const x=f.extra||{};
+  let detail="";
+  if(f.engine==="sast" && x.flow){
+    detail=`<div class="sec">data flow · ${x.flow_length} nodes</div><ul class="flow">`+
+      x.flow.map((n,i)=>`<li class="${i===0?'src':i===x.flow.length-1?'snk':''}">${n.name||''} <span style="color:var(--ink-faint)">${n.file||''}${n.line?':'+n.line:''}</span></li>`).join("")+`</ul>`;
+  } else if(f.engine==="sca"){
+    detail=`<div class="sec">component</div><div class="kv">${row("package",x.package)}${row("version",x.version)}${row("CVE",x.cve)}${row("CVSS",x.cvss)}${row("fixed in",x.fixed_version)}</div>`;
+    if((x.references||[]).length) detail+=`<div class="sec">references</div><div class="desc">${x.references.join("\n")}</div>`;
+  } else if(f.engine==="kics"){
+    detail=`<div class="sec">remediation</div><div class="desc">${x.remediation||'see KICS query docs'}</div>`;
+  } else if(f.engine==="twoms"){
+    detail=`<div class="sec">secret</div><div class="kv">${row("rule",f.rule_id)}${row("validation",x.validationStatus||x.validation)}</div><div class="desc" style="color:var(--ink-faint)">value redacted by policy</div>`;
+  }
+  document.getElementById("drawer-body").innerHTML=`
+    <span class="sev-tag bg-${f.severity}">${f.severity}</span>
+    <h2 style="margin-top:10px">${f.title||f.rule_id||'finding'}</h2>
+    <div class="kv">${row("engine",ENGINES[f.engine]||f.engine)}${row("rule",f.rule_id)}${row("file",(f.file||'')+(f.line?':'+f.line:''))}</div>
+    ${f.description?`<div class="desc">${f.description}</div>`:""}
+    ${detail}`;
+  document.getElementById("drawer").classList.add("on");
+  document.getElementById("scrim").classList.add("on");
+}
+function closeDrawer(){document.getElementById("drawer").classList.remove("on");document.getElementById("scrim").classList.remove("on");}
+document.getElementById("drawer-x").onclick=closeDrawer;
+document.getElementById("scrim").onclick=closeDrawer;
+
+async function poll(id){
+  try{
+    const r = await fetch(`/api/scans/${id}`); if(!r.ok) throw 0;
+    const s = await r.json(); active=s; render(s);
+    if(s.status==="scanning"||s.status==="starting"){return;}
+    clearInterval(timer); timer=null;
+  }catch(e){clearInterval(timer);}
+}
+
+document.getElementById("run").onclick=async()=>{
+  const url=document.getElementById("git").value.trim();
+  const ref=document.getElementById("ref").value.trim()||"main";
+  const engines=[...document.querySelectorAll('#engsel input:checked')].map(c=>c.value);
+  if(!url){ document.getElementById("git").focus(); return; }
+  if(!engines.length){ alert("Select at least one engine."); return; }
+  // instant feedback so the click is never silent
+  active={status:"starting",started:new Date().toISOString(),clone_log:["submitting scan…"],
+    engines:Object.fromEntries(engines.map(e=>[e,{status:"pending",log:[],counts:{},gate:null}]))};
+  render(active);
+  try{
+    const r=await fetch("/api/scans",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({config_path:"config.example.yaml",git_url:url,git_ref:ref,engines})});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const {scan_id}=await r.json();
+    clearInterval(timer); timer=setInterval(()=>poll(scan_id),1200); poll(scan_id);
+  }catch(e){
+    active.status="failed"; active.error="couldn't reach backend — is uvicorn running? ("+e.message+")";
+    render(active);
+  }
+};
+// engine chip toggles
+document.querySelectorAll('#engsel input').forEach(c=>c.onchange=()=>c.closest('label').classList.toggle('on',c.checked));
+document.getElementById("demo").onclick=()=>{active=DEMO;render(DEMO);};
+render(DEMO); // initial paint
+
+// ---- tabs ----
+const DEMO_SETUP = [
+  {name:"kics",kind:"scanner",installed:false,can_autoinstall:true},
+  {name:"2ms",kind:"scanner",installed:true,version:"2ms 3.0.0",path:"~/.cxscan/bin/2ms"},
+  {name:"mvn",kind:"pkgmgr",installed:true,version:"Apache Maven 3.9.6",eco:"Java/Maven"},
+  {name:"npm",kind:"pkgmgr",installed:false,eco:"Node",install_hint:"brew install node"},
+  {name:"dotnet",kind:"pkgmgr",installed:false,eco:".NET",install_hint:"winget install Microsoft.DotNet.SDK.8"},
+];
+const DEMO_PIPE = {jenkins:"// connect the backend (config.example.yaml) to generate your Jenkins stages.\n// Demo mode shows the layout only.",
+  azure:"# connect the backend to generate Azure DevOps steps.\n# Demo mode shows the layout only."};
+
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
+  t.classList.add('on');
+  document.getElementById('panel-'+t.dataset.tab).classList.add('on');
+  if(t.dataset.tab==='setup') loadSetup();
+  if(t.dataset.tab==='pipeline') loadPipe(curProvider);
+});
+
+function renderSetup(rows){
+  document.getElementById('setup-list').innerHTML = rows.map(r=>{
+    const pill = r.installed?`<span class="pill ok">installed</span>`:`<span class="pill no">missing</span>`;
+    const act = (!r.installed && r.kind==='scanner')
+      ? `<button data-inst="${r.name}">Download + verify</button>`
+      : (!r.installed && r.install_hint)? `` : ``;
+    const cmd = (!r.installed && r.install_hint)?`<div class="cmd">$ ${r.install_hint}</div>`:'';
+    return `<div class="toolrow">
+      <span class="nm">${r.name}</span>
+      <span class="vr">${r.installed?(r.version||r.path||'ready'):(r.eco||r.kind)}</span>
+      ${pill}${act}${cmd}</div>`;
+  }).join("");
+  document.querySelectorAll('[data-inst]').forEach(b=>b.onclick=async()=>{
+    b.textContent="downloading…"; b.disabled=true;
+    try{const r=await fetch(`/api/preflight/install/${b.dataset.inst}`,{method:"POST"});
+      const j=await r.json(); b.textContent=j.ok?"installed ✓":"see docs";
+    }catch(e){b.textContent="blocked — manual";}
+  });
+}
+async function loadSetup(){
+  try{const r=await fetch('/api/preflight'); if(!r.ok)throw 0; renderSetup(await r.json());}
+  catch(e){ renderSetup(DEMO_SETUP); }
+  loadConnections();
+}
+
+// ---- connections ----
+function chip(el, ok, txt){el.className="pill "+(ok?"ok":"no");el.textContent=txt;}
+async function loadConnections(){
+  try{const r=await fetch('/api/connections'); if(!r.ok)throw 0; const s=await r.json();
+    if(s.sast){chip(document.getElementById('sast-chip'),true,"connected");
+      document.getElementById('sast-url').value=s.sast.server_url||'';
+      document.getElementById('sast-user').value=s.sast.username||'';}
+    if(s.cxone){chip(document.getElementById('cx-chip'),true,"connected");
+      document.getElementById('cx-out').innerHTML=`tenant <b>${s.cxone.tenant}</b><br>${s.cxone.base_uri}`;}
+    if(s.git){chip(document.getElementById('git-chip'),true,"connected");
+      document.getElementById('gitchip').textContent=`git auth: ${s.git.hosts.join(', ')} ✓`;}
+  }catch(e){/* no backend */}
+}
+document.getElementById('sast-connect').onclick=async()=>{
+  const chipEl=document.getElementById('sast-chip'), out=document.getElementById('sast-out');
+  chip(chipEl,true,"testing…"); chipEl.className="pill";
+  try{
+    const r=await fetch('/api/connections/sast',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({url:sastUrl.value,username:sastUser.value,password:sastPass.value})});
+    const j=await r.json();
+    chip(chipEl,j.ok,j.ok?"live":"failed");
+    out.innerHTML=j.ok
+      ? `${j.note||''}<br>${(j.teams||[]).map(t=>`team <b>${t.name}</b> → id <b>${t.id}</b>`).join('<br>')||''}`
+      : (j.error||'connection failed');
+  }catch(e){chip(chipEl,false,"no backend");out.textContent="start the backend (uvicorn) to test connections";}
+};
+document.getElementById('cx-connect').onclick=async()=>{
+  const chipEl=document.getElementById('cx-chip'), out=document.getElementById('cx-out');
+  chipEl.className="pill"; chipEl.textContent="testing…";
+  try{
+    const r=await fetch('/api/connections/cxone',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({api_key:document.getElementById('cx-key').value})});
+    const j=await r.json();
+    chip(chipEl,j.ok,j.ok?(j.api_reachable?"live":"auth ok"):"failed");
+    out.innerHTML=j.ok
+      ? `tenant <b>${j.tenant}</b><br>base <b>${j.base_uri}</b><br>${j.note||''}`
+      : (j.error||'connection failed');
+  }catch(e){chip(chipEl,false,"no backend");out.textContent="start the backend (uvicorn) to test connections";}
+};
+document.getElementById('git-connect').onclick=async()=>{
+  const chipEl=document.getElementById('git-chip'), out=document.getElementById('git-out');
+  chipEl.className="pill"; chipEl.textContent="testing…";
+  try{
+    const r=await fetch('/api/connections/git',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({repo_url:document.getElementById('git-url').value,
+        username:document.getElementById('git-user').value,token:document.getElementById('git-token').value})});
+    const j=await r.json();
+    chip(chipEl,j.ok,j.ok?"connected":"failed");
+    out.innerHTML=j.ok?`<b>${j.host}</b> — ${j.note}`:(j.error||'failed');
+    if(j.ok) document.getElementById('gitchip').textContent=`git auth: ${j.host} ✓`;
+  }catch(e){chip(chipEl,false,"no backend");out.textContent="start the backend to test git auth";}
+};
+const sastUrl=document.getElementById('sast-url'),sastUser=document.getElementById('sast-user'),sastPass=document.getElementById('sast-pass');
+
+// ---- pipeline ----
+let curProvider="jenkins";
+function renderPipe(text){document.getElementById('snip').textContent=text;}
+async function loadPipe(p){
+  curProvider=p;
+  document.querySelectorAll('#seg-provider button').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
+  try{const r=await fetch(`/api/pipeline/${p}`); if(!r.ok)throw 0; renderPipe((await r.json()).snippet);}
+  catch(e){ renderPipe(DEMO_PIPE[p]); }
+}
+document.querySelectorAll('#seg-provider button').forEach(b=>b.onclick=()=>loadPipe(b.dataset.p));
+document.getElementById('copy-snip').onclick=()=>navigator.clipboard?.writeText(document.getElementById('snip').textContent);
+loadConnections(); // reflect any stored connections on first paint
+</script>
+</body>
+</html>
