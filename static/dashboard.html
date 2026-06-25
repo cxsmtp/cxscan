@@ -260,6 +260,9 @@
         <div class="field"><label>Token / PAT</label><input id="git-token" type="password" autocomplete="new-password"></div>
         <div class="row"><button id="git-connect">Test &amp; connect</button><span id="git-chip"></span></div>
         <div class="out" id="git-out">Token is used as the password over HTTPS. Stored per host.</div>
+        <div class="desc" style="margin-top:10px">— or —</div>
+        <div class="row"><button id="gh-oauth">Authenticate with GitHub</button><span id="gh-chip"></span></div>
+        <div class="out" id="gh-out">One-click device login for github.com — no PAT to paste.</div>
       </div>
     </div>
 
@@ -289,6 +292,11 @@ const ENGINES = {sast:"SAST",sca:"SCA",kics:"KICS",twoms:"2MS"};
 const KIND = {sast:"on-prem · cxsast",sca:"resolver · metadata egress",kics:"local · iac",twoms:"local · secrets"};
 const SEVS = ["CRITICAL","HIGH","MEDIUM","LOW","INFO"];
 let active = null, timer = null, sevFilter = new Set(SEVS), ALLF = [];
+
+// Neutral landing state — engines pending, no verdict — so the first paint is
+// never mistaken for a failed scan. The hardcoded DEMO is behind the Demo button.
+const IDLE = {status:"idle",
+  engines:Object.fromEntries(Object.keys(ENGINES).map(k=>[k,{status:"pending",counts:{},gate:null,log:[]}]))};
 
 const DEMO = {
   status:"completed", overall_gate:"fail", started:"2026-06-25T09:12:00Z",
@@ -460,7 +468,7 @@ document.getElementById("run").onclick=async()=>{
 // engine chip toggles
 document.querySelectorAll('#engsel input').forEach(c=>c.onchange=()=>c.closest('label').classList.toggle('on',c.checked));
 document.getElementById("demo").onclick=()=>{active=DEMO;render(DEMO);};
-render(DEMO); // initial paint
+render(IDLE); // initial paint — neutral, not the demo FAIL
 
 // ---- tabs ----
 const DEMO_SETUP = [
@@ -513,12 +521,33 @@ async function loadConnections(){
   try{const r=await fetch('/api/connections'); if(!r.ok)throw 0; const s=await r.json();
     if(s.sast){chip(document.getElementById('sast-chip'),true,"connected");
       document.getElementById('sast-url').value=s.sast.server_url||'';
-      document.getElementById('sast-user').value=s.sast.username||'';}
+      document.getElementById('sast-user').value=s.sast.username||'';
+      if(s.sast.team_id!=null){selectedTeam=s.sast.team_id;
+        document.getElementById('sast-chip').textContent='team: '+(s.sast.team_name||s.sast.team_id);}}
     if(s.cxone){chip(document.getElementById('cx-chip'),true,"connected");
       document.getElementById('cx-out').innerHTML=`tenant <b>${s.cxone.tenant}</b><br>${s.cxone.base_uri}`;}
     if(s.git){chip(document.getElementById('git-chip'),true,"connected");
       document.getElementById('gitchip').textContent=`git auth: ${s.git.hosts.join(', ')} ✓`;}
   }catch(e){/* no backend */}
+}
+let lastTeams=[], selectedTeam=null;
+function renderTeams(teams, note){
+  const out=document.getElementById('sast-out');
+  lastTeams=teams||[];
+  if(!lastTeams.length){ out.textContent=note||''; return; }
+  out.innerHTML=`<div style="color:var(--ink-faint);margin-bottom:6px">${note||''} — click a team for SAST scans:</div>`+
+    lastTeams.map(t=>`<div class="teamrow" data-id="${t.id}" data-name="${(t.name||'').replace(/"/g,'&quot;')}"
+        style="cursor:pointer;padding:3px 8px;border-radius:6px;${t.id===selectedTeam?'background:var(--line)':''}">
+        <span style="display:inline-block;width:14px">${t.id===selectedTeam?'✓':''}</span>
+        <b>${t.name||''}</b> <span style="color:var(--ink-faint)">id ${t.id}</span></div>`).join("");
+  out.querySelectorAll('.teamrow').forEach(el=>el.onclick=async()=>{
+    selectedTeam=+el.dataset.id;
+    renderTeams(lastTeams, note);                       // repaint highlight
+    try{ await fetch('/api/connections/sast/team',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({team_id:selectedTeam,team_name:el.dataset.name})});
+      document.getElementById('sast-chip').textContent='team: '+el.dataset.name;
+    }catch(e){}
+  });
 }
 document.getElementById('sast-connect').onclick=async()=>{
   const chipEl=document.getElementById('sast-chip'), out=document.getElementById('sast-out');
@@ -528,9 +557,7 @@ document.getElementById('sast-connect').onclick=async()=>{
       body:JSON.stringify({url:sastUrl.value,username:sastUser.value,password:sastPass.value})});
     const j=await r.json();
     chip(chipEl,j.ok,j.ok?"live":"failed");
-    out.innerHTML=j.ok
-      ? `${j.note||''}<br>${(j.teams||[]).map(t=>`team <b>${t.name}</b> → id <b>${t.id}</b>`).join('<br>')||''}`
-      : (j.error||'connection failed');
+    if(j.ok) renderTeams(j.teams, j.note); else out.textContent=j.error||'connection failed';
   }catch(e){chip(chipEl,false,"no backend");out.textContent="start the backend (uvicorn) to test connections";}
 };
 document.getElementById('cx-connect').onclick=async()=>{
@@ -560,6 +587,56 @@ document.getElementById('git-connect').onclick=async()=>{
   }catch(e){chip(chipEl,false,"no backend");out.textContent="start the backend to test git auth";}
 };
 const sastUrl=document.getElementById('sast-url'),sastUser=document.getElementById('sast-user'),sastPass=document.getElementById('sast-pass');
+
+// ---- GitHub auth: device flow if an OAuth app is configured, else a
+//      pre-filled Personal Access Token page (no OAuth app to register). ----
+let ghPoll=null, ghConfigured=false;
+const PAT_URL="https://github.com/settings/tokens/new?scopes=repo&description=cxscan%20local";
+async function ghInit(){
+  try{const r=await fetch('/api/connections/git/github'); const j=await r.json();
+    ghConfigured=!!j.configured;
+    document.getElementById('gh-out').innerHTML=ghConfigured
+      ? "opens github.com in your browser to approve — one click."
+      : "opens GitHub's token page (scopes pre-filled) — generate a token and paste it above.";
+  }catch(e){/* no backend */}
+}
+ghInit();
+document.getElementById('gh-oauth').onclick=async()=>{
+  const chipEl=document.getElementById('gh-chip'), out=document.getElementById('gh-out'), btn=document.getElementById('gh-oauth');
+  // No OAuth app configured: open the PAT page locally and let the manual form finish.
+  if(!ghConfigured){
+    window.open(PAT_URL,'_blank','noopener');
+    out.innerHTML="GitHub opened in a new tab. Generate the token, paste it into <b>Token / PAT</b> above with your username, then <b>Test &amp; connect</b>.";
+    document.getElementById('git-user').focus();
+    return;
+  }
+  // Device flow: open github.com (code pre-filled) and poll for the token.
+  if(ghPoll){clearInterval(ghPoll); ghPoll=null;}
+  chipEl.className="pill"; chipEl.textContent="starting…";
+  try{
+    const r=await fetch('/api/connections/git/github/start',{method:'POST'}); const j=await r.json();
+    if(!j.ok){ chip(chipEl,false,"failed"); out.textContent=j.error||"could not start"; return; }
+    const goUrl=j.verification_uri_complete||j.verification_uri;
+    window.open(goUrl,'_blank','noopener');           // open github.com on this machine
+    out.innerHTML=`Approve in the GitHub tab. If it didn't open: <a href="${goUrl}" target="_blank" rel="noopener"><b>${j.verification_uri}</b></a> · code <b style="font-family:var(--mono);font-size:15px">${j.user_code}</b>`;
+    chipEl.textContent="waiting for approval…"; btn.disabled=true;
+    let interval=(j.interval||5)*1000;
+    const deadline=Date.now()+((j.expires_in||900)*1000);
+    const tick=async()=>{
+      if(Date.now()>deadline){ clearInterval(ghPoll); ghPoll=null; btn.disabled=false; chip(chipEl,false,"expired"); return; }
+      const p=await fetch('/api/connections/git/github/poll',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({device_code:j.device_code})});
+      const s=await p.json();
+      if(s.status==="connected"){ clearInterval(ghPoll); ghPoll=null; btn.disabled=false;
+        chip(chipEl,true,"connected"); out.innerHTML=`<b>${s.host}</b> — authenticated`;
+        document.getElementById('gitchip').textContent=`git auth: ${s.host} ✓`; loadConnections(); }
+      else if(s.status==="error"){ clearInterval(ghPoll); ghPoll=null; btn.disabled=false;
+        chip(chipEl,false,"failed"); out.textContent=s.error||"authorization failed"; }
+      else if(s.status==="slow_down"){ clearInterval(ghPoll); interval+=5000; ghPoll=setInterval(tick,interval); }
+    };
+    ghPoll=setInterval(tick,interval);
+  }catch(e){chip(chipEl,false,"no backend");out.textContent="start the backend to use GitHub auth";}
+};
 
 // ---- pipeline ----
 let curProvider="jenkins";

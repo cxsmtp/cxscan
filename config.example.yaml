@@ -29,7 +29,8 @@ engines:
     team_id: 1                   # CxSAST team/owningTeam id (get via /cxrestapi/auth/teams)
     incremental: false
     timeout_s: 3600
-    reports: [xml, pdf]         # xml feeds the dashboard; pdf is the human artifact
+    reports: [xml, pdf]         # XML is always generated + converted to sast.json
+                                # (what the dashboard consumes); pdf is for people
     threshold:                  # gate fails if counts at/above severity are exceeded
       High: 0
       Medium: 10

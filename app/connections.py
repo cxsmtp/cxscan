@@ -53,7 +53,7 @@ def sast_test_and_store(url: str, username: str, password: str) -> dict:
                           "password": password, "connected_at": time.time()}
         return {"ok": True, "server_url": base, "live": True,
                 "teams": [{"id": t.get("id"), "name": t.get("fullName")} for t in teams][:50],
-                "note": "authenticated; pick a team_id below for SAST scans"}
+                "note": "authenticated; pick a team below for SAST scans"}
     except urllib.error.HTTPError as e:
         return {"ok": False, "live": False, "error": f"HTTP {e.code} — check URL / credentials"}
     except Exception as e:
@@ -137,6 +137,23 @@ def git_auth_for(repo_url: str) -> dict | None:
     return (_STORE.get("git") or {}).get(host)
 
 
+def set_sast_team(team_id: int, team_name: str | None = None) -> dict:
+    """Record the SAST team picked in the UI; SAST scans create the project under
+    it (overrides config team_id). Requires an existing SAST connection."""
+    s = _STORE.get("sast")
+    if not s:
+        return {"ok": False, "error": "connect to CxSAST first"}
+    s["team_id"] = team_id
+    s["team_name"] = team_name
+    return {"ok": True, "team_id": team_id, "team_name": team_name}
+
+
+def store_git_token(host: str, username: str, token: str) -> None:
+    """Store git creds for a host (used by the GitHub OAuth device flow). Same
+    in-memory store the manual git form writes to."""
+    _STORE.setdefault("git", {})[host] = {"username": username, "token": token}
+
+
 # ---- accessors used by the scan runners --------------------------------------
 def get(name: str) -> dict | None:
     return _STORE.get(name)
@@ -148,7 +165,8 @@ def status() -> dict:
     s = _STORE.get("sast")
     if s:
         out["sast"] = {"connected": True, "server_url": s["server_url"],
-                       "username": s["username"]}
+                       "username": s["username"], "team_id": s.get("team_id"),
+                       "team_name": s.get("team_name")}
     c = _STORE.get("cxone")
     if c:
         out["cxone"] = {"connected": True, "tenant": c["tenant"],

@@ -1,0 +1,24 @@
+{
+  "value": [
+    {
+      "QueryId": 789,
+      "QueryName": "SQL_Injection",
+      "Severity": 3,
+      "FileName": "src/db.java",
+      "Line": 42,
+      "StateId": 0,
+      "Status": "New",
+      "SimilarityId": 123456
+    },
+    {
+      "QueryId": 790,
+      "QueryName": "Reflected_XSS",
+      "Severity": 2,
+      "FileName": "src/view.java",
+      "Line": 8,
+      "StateId": 0,
+      "Status": "New",
+      "SimilarityId": 654321
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "results": [
+    {
+      "type": "sca",
+      "id": "Cx-1",
+      "severity": "CRITICAL",
+      "description": "Remote code execution in log4j-core",
+      "data": {
+        "packageIdentifier": "log4j-core",
+        "packageVersion": "2.14.1",
+        "recommendedVersion": "2.17.1"
+      },
+      "vulnerabilityDetails": {
+        "cveName": "CVE-2021-44228",
+        "cvssScore": 10.0,
+        "cweId": "CWE-502",
+        "references": [{"url": "https://nvd.nist.gov/vuln/detail/CVE-2021-44228"}]
+      }
+    },
+    {
+      "type": "sast",
+      "id": "Cx-2",
+      "severity": "HIGH",
+      "description": "ignored: not an SCA result"
+    }
+  ]
+}

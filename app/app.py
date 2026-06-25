@@ -17,15 +17,16 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from .models import EngineThreshold, resolve_env
-from . import engines, normalize, preflight, pipeline, connections
+from . import engines, normalize, preflight, pipeline, connections, auth, github_oauth
 
 app = FastAPI(title="cxscan")
+app.add_middleware(auth.BasicAuthMiddleware)
 STATIC = Path(__file__).resolve().parent.parent / "static"
 RUNS: dict[str, dict] = {}            # scan_id -> state
 PARSERS = {"kics": ("sarif", normalize.parse_sarif, "kics"),
            "twoms": ("sarif", normalize.parse_sarif, "twoms"),
            "sca": ("json", normalize.parse_sca_json, None),
-           "sast": ("xml", normalize.parse_sast_xml, None)}
+           "sast": ("json", normalize.parse_sast_json, None)}
 
 
 class StartRequest(BaseModel):
@@ -83,6 +84,8 @@ def _run_scan(scan_id, raw_cfg):
             cfg["engines"]["sast"].update(
                 server_url=sast_conn["server_url"], username=sast_conn["username"],
                 password=sast_conn["password"])
+            if sast_conn.get("team_id") is not None:   # team picked in the UI
+                cfg["engines"]["sast"]["team_id"] = sast_conn["team_id"]
         cx = connections.get("cxone")
         if cx and "sca" in cfg["engines"]:
             cfg["engines"]["sca"].update(
@@ -168,7 +171,7 @@ class CxOneConn(BaseModel):
 @app.get("/api/connections")
 def get_connections():
     """Non-secret status of configured connections."""
-    return connections.status()
+    return {**connections.status(), "app_auth": auth.enabled()}
 
 
 @app.post("/api/connections/sast")
@@ -183,6 +186,17 @@ def connect_cxone(c: CxOneConn):
     return connections.cxone_test_and_store(c.api_key)
 
 
+class SastTeam(BaseModel):
+    team_id: int
+    team_name: str | None = None
+
+
+@app.post("/api/connections/sast/team")
+def select_sast_team(t: SastTeam):
+    """Pick the CxSAST team SAST scans create the project under (UI click)."""
+    return connections.set_sast_team(t.team_id, t.team_name)
+
+
 class GitConn(BaseModel):
     repo_url: str
     username: str
@@ -193,6 +207,28 @@ class GitConn(BaseModel):
 def connect_git(c: GitConn):
     """Validate git creds via ls-remote on the given repo; store by host."""
     return connections.git_test_and_store(c.repo_url, c.username, c.token)
+
+
+@app.get("/api/connections/git/github")
+def github_oauth_status():
+    """Whether the GitHub OAuth button is usable (client id configured)."""
+    return {"configured": github_oauth.configured()}
+
+
+@app.post("/api/connections/git/github/start")
+def github_oauth_start():
+    """Begin the GitHub device flow — returns a user code + verification URL."""
+    return github_oauth.start()
+
+
+class DeviceCode(BaseModel):
+    device_code: str
+
+
+@app.post("/api/connections/git/github/poll")
+def github_oauth_poll(c: DeviceCode):
+    """Poll once for the token; on success the github.com creds are stored."""
+    return github_oauth.poll(c.device_code)
 
 
 @app.get("/api/preflight")

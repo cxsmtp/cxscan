@@ -1,0 +1,22 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {"driver": {"name": "2ms", "rules": [{"id": "aws-key", "name": "AWS Access Key"}]}},
+      "results": [
+        {
+          "ruleId": "aws-key",
+          "level": "error",
+          "message": {"text": "AWS access key detected"},
+          "properties": {"secret": "AKIAIOSFODNN7EXAMPLE", "match": "AKIA..."},
+          "locations": [
+            {"physicalLocation": {
+              "artifactLocation": {"uri": "config/prod.env"},
+              "region": {"startLine": 7}
+            }}
+          ]
+        }
+      ]
+    }
+  ]
+}

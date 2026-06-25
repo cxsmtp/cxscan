@@ -58,30 +58,107 @@ def parse_sarif(path: Path, engine: str) -> list[Finding]:
     return out
 
 
-# ---- SCA (Resolver risk-report JSON) ----------------------------------------
+# ---- SCA (CxOne CLI / Resolver JSON) ----------------------------------------
 def parse_sca_json(path: Path) -> list[Finding]:
-    """ADAPTER — verify against a real Resolver --report-type json output."""
+    """Parse SCA results JSON. Handles two shapes, newest first:
+
+    1. CxOne `cx` CLI  `--report-format json` -> {"results": [{type:"sca", ...}]}
+    2. SCA Resolver risk-report               -> {"Vulnerabilities": [...]}
+
+    Both are isolated here; field paths follow the documented schemas. Validate
+    against a real report from your tenant — vendor JSON drifts between versions.
+    """
     data = _load_json(path)
-    out: list[Finding] = []
+    # Shape 1: CxOne CLI report. `results` is a flat list typed per engine.
+    cx_results = data.get("results")
+    if isinstance(cx_results, list):
+        sca = [r for r in cx_results
+               if (r.get("type") or "").lower() in ("sca", "sca-vulnerability")]
+        if sca:
+            return [_sca_from_cxone(r) for r in sca]
+    # Shape 2: Resolver risk-report.
     vulns = data.get("Vulnerabilities") or data.get("vulnerabilities") or []
-    for v in vulns:
-        pkg = v.get("PackageName") or v.get("packageName") or ""
-        ver = v.get("PackageVersion") or v.get("version") or ""
-        cve = v.get("Cve") or v.get("cveName") or v.get("id") or "SCA"
-        fixed = (v.get("RecommendedVersion") or v.get("recommendedVersion")
-                 or v.get("fixResolutionText") or v.get("fixedVersion"))
+    return [_sca_from_resolver(v) for v in vulns]
+
+
+def _sca_from_cxone(r: dict) -> Finding:
+    d = r.get("data") or {}
+    vd = r.get("vulnerabilityDetails") or {}
+    pkg = (d.get("packageIdentifier") or d.get("packageName")
+           or r.get("packageName") or "")
+    ver = d.get("packageVersion") or r.get("packageVersion") or ""
+    cve = (vd.get("cveName") or r.get("cveName") or r.get("id")
+           or d.get("queryName") or "SCA")
+    fixed = d.get("recommendedVersion") or r.get("recommendedVersion")
+    refs = [x.get("url") for x in (vd.get("references") or []) if x.get("url")]
+    return Finding(
+        engine="sca",
+        rule_id=cve,
+        title=f"{pkg}@{ver}: {cve}".strip(": ") or cve,
+        severity=normalize_sev(r.get("severity") or vd.get("severity"), SCA_MAP),
+        file=pkg or None,
+        description=r.get("description") or vd.get("description") or "",
+        extra={"package": pkg, "version": ver, "cve": cve, "fixed_version": fixed,
+               "cvss": vd.get("cvssScore") or vd.get("cvss"),
+               "cwe": vd.get("cweId"), "references": refs[:5]},
+    )
+
+
+def _sca_from_resolver(v: dict) -> Finding:
+    pkg = v.get("PackageName") or v.get("packageName") or ""
+    ver = v.get("PackageVersion") or v.get("version") or ""
+    cve = v.get("Cve") or v.get("cveName") or v.get("id") or "SCA"
+    fixed = (v.get("RecommendedVersion") or v.get("recommendedVersion")
+             or v.get("fixResolutionText") or v.get("fixedVersion"))
+    return Finding(
+        engine="sca",
+        rule_id=cve,
+        title=f"{pkg}@{ver}: {cve}".strip(": ") or cve,
+        severity=normalize_sev(v.get("Severity") or v.get("severity"), SCA_MAP),
+        file=pkg or None,
+        description=v.get("Description") or v.get("description") or "",
+        extra={"package": pkg, "version": ver, "cve": cve, "fixed_version": fixed,
+               "cvss": v.get("Score") or v.get("cvssScore"),
+               "references": (v.get("References") or v.get("references") or [])[:5]},
+    )
+
+
+# ---- SAST (JSON: unified findings written by the REST flow, or raw OData) ----
+# CxSAST report generation does NOT emit JSON (only PDF/RTF/CSV/XML), so the JSON
+# path is produced via the REST API flow (see cxsast.py) and read back here. We
+# also tolerate a raw OData results page ({"value": [...]}) for forward-compat.
+_SAST_INT_SEV = {0: "INFO", 1: "LOW", 2: "MEDIUM", 3: "HIGH", 4: "CRITICAL"}
+
+
+def parse_sast_json(path: Path) -> list[Finding]:
+    data = _load_json(path)
+    rows = (data if isinstance(data, list)
+            else data.get("findings") or data.get("value") or [])
+    out: list[Finding] = []
+    for r in rows:
+        # Unified shape (what cxscan writes) round-trips straight to a Finding.
+        if "engine" in r and "severity" in r and isinstance(r.get("severity"), str):
+            out.append(Finding(
+                engine="sast", rule_id=r.get("rule_id", "SAST"),
+                title=r.get("title", "SAST"), severity=r["severity"],
+                file=r.get("file"), line=r.get("line"),
+                description=r.get("description", ""), extra=r.get("extra", {}) or {}))
+            continue
+        # Raw OData/REST result: severity may be an int or a string.
+        raw_sev = r.get("Severity", r.get("severity"))
+        sev = (_SAST_INT_SEV.get(raw_sev) if isinstance(raw_sev, int)
+               else normalize_sev(raw_sev, SAST_MAP))
         out.append(Finding(
-            engine="sca",
-            rule_id=cve,
-            title=f"{pkg}@{ver}: {cve}".strip(": "),
-            severity=normalize_sev(v.get("Severity") or v.get("severity"), SCA_MAP),
-            file=pkg or None,
-            description=v.get("Description") or v.get("description") or "",
-            extra={"package": pkg, "version": ver,
-                   "cve": cve, "fixed_version": fixed,
-                   "cvss": v.get("Score") or v.get("cvssScore"),
-                   "references": (v.get("References") or v.get("references") or [])[:5]},
-        ))
+            engine="sast",
+            rule_id=str(r.get("QueryId") or r.get("queryId") or r.get("rule_id") or "SAST"),
+            title=r.get("QueryName") or r.get("queryName") or r.get("title") or "SAST",
+            severity=sev,
+            file=r.get("FileName") or r.get("fileName") or r.get("file"),
+            line=r.get("Line") or r.get("line"),
+            description=r.get("Comment") or r.get("description") or "",
+            extra={"state": r.get("StateId") or r.get("state"),
+                   "status": r.get("Status") or r.get("status"),
+                   "similarity_id": r.get("SimilarityId")}))
     return out
 
 
