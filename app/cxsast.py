@@ -31,11 +31,12 @@ def _req(url, method="GET", headers=None, data=None, want_json=True, raw=False):
 
 
 def _auth(base, user, pwd) -> str:
-    # access_control_api is requested too so the same token can read teams and,
-    # where enabled, the OData results service for the JSON path.
+    # scope = sast_rest_api only: this is the documented v8.6+ scope and matches
+    # the proven Setup-tab connection. (Don't add access_control_api — older
+    # managers can reject the unknown scope and fail the token request.)
     data = urllib.parse.urlencode({
         "username": user, "password": pwd, "grant_type": "password",
-        "scope": "sast_rest_api access_control_api", "client_id": _CLIENT_ID,
+        "scope": "sast_rest_api", "client_id": _CLIENT_ID,
         "client_secret": _CLIENT_SECRET,
     }).encode()
     tok = _req(f"{base}/cxrestapi/auth/identity/connect/token", "POST",
