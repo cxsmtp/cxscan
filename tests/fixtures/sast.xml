@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CxXMLResults>
+  <Query id="789" name="SQL_Injection" Severity="High">
+    <Result FileName="src/db.java" Line="42" Severity="High" state="0" Status="New"
+            DeepLink="https://cxsast/CxWebClient/ViewerMain.aspx?scanId=1&amp;projectId=2&amp;pathId=3">
+      <Path>
+        <PathNode>
+          <FileName>src/web.java</FileName>
+          <Line>10</Line>
+          <Name>getParameter</Name>
+        </PathNode>
+        <PathNode>
+          <FileName>src/db.java</FileName>
+          <Line>42</Line>
+          <Name>executeQuery</Name>
+        </PathNode>
+      </Path>
+    </Result>
+  </Query>
+  <Query id="790" name="Reflected_XSS" Severity="Medium">
+    <Result FileName="src/view.java" Line="8" Severity="Medium" state="0" Status="New"/>
+  </Query>
+</CxXMLResults>

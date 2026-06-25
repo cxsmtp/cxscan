@@ -31,9 +31,11 @@ def _req(url, method="GET", headers=None, data=None, want_json=True, raw=False):
 
 
 def _auth(base, user, pwd) -> str:
+    # access_control_api is requested too so the same token can read teams and,
+    # where enabled, the OData results service for the JSON path.
     data = urllib.parse.urlencode({
         "username": user, "password": pwd, "grant_type": "password",
-        "scope": "sast_rest_api", "client_id": _CLIENT_ID,
+        "scope": "sast_rest_api access_control_api", "client_id": _CLIENT_ID,
         "client_secret": _CLIENT_SECRET,
     }).encode()
     tok = _req(f"{base}/cxrestapi/auth/identity/connect/token", "POST",
@@ -101,9 +103,13 @@ def run(src: Path, out: Path, cfg: dict, log) -> tuple[dict, int]:
     if status != "Finished":
         return ({}, 1)
 
-    # Generate + download reports. XML drives the dashboard; PDF is the artifact.
+    # Reports. CxSAST cannot emit JSON natively, so XML is always generated (it
+    # carries full data-flow) and converted to a unified sast.json for the
+    # dashboard. PDF is the human artifact. Severity statistics come straight
+    # from the REST API as JSON.
     paths = {}
-    for rtype in [r.upper() for r in cfg.get("reports", ["XML", "PDF"])]:
+    want = {r.upper() for r in cfg.get("reports", ["XML", "PDF"])} | {"XML"}
+    for rtype in want:
         rb = json.dumps({"reportType": rtype, "scanId": scan_id}).encode()
         rid = _req(f"{base}/cxrestapi/reports/sastScan", "POST", jauth, rb)["reportId"]
         for _ in range(60):
@@ -116,4 +122,25 @@ def run(src: Path, out: Path, cfg: dict, log) -> tuple[dict, int]:
         fp = out / f"sast.{rtype.lower()}"
         fp.write_bytes(data)
         paths[rtype.lower()] = fp
+
+    # Authoritative severity counts via REST (JSON), independent of the report.
+    try:
+        stats = _req(f"{base}/cxrestapi/sast/scans/{scan_id}/resultsStatistics",
+                     headers=auth)
+        (out / "sast_stats.json").write_text(json.dumps(stats, indent=2))
+        paths["stats"] = out / "sast_stats.json"
+    except Exception:
+        log("sast: results statistics unavailable")
+
+    # XML -> unified JSON: this is the JSON the dashboard consumes, produced from
+    # the REST flow. Isolated so a future native-JSON source is a drop-in.
+    try:
+        from . import normalize
+        findings = normalize.parse_sast_xml(paths["xml"])
+        jpath = out / "sast.json"
+        jpath.write_text(json.dumps([f.public(redact=False) for f in findings], indent=2))
+        paths["json"] = jpath
+        log(f"sast: {len(findings)} result(s) -> sast.json")
+    except Exception as e:
+        log(f"sast: could not build sast.json ({e})")
     return (paths, 0)

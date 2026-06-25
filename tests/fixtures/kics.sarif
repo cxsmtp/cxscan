@@ -1,0 +1,45 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "KICS",
+          "rules": [
+            {
+              "id": "a1b2",
+              "name": "Privileged container",
+              "help": {"text": "Do not run containers as privileged."}
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "a1b2",
+          "level": "error",
+          "message": {"text": "Container is privileged"},
+          "properties": {"severity": "HIGH", "category": "Insecure Configurations"},
+          "locations": [
+            {"physicalLocation": {
+              "artifactLocation": {"uri": "deploy/pod.yaml"},
+              "region": {"startLine": 12}
+            }}
+          ]
+        },
+        {
+          "ruleId": "unknown-rule",
+          "level": "note",
+          "message": {"text": "Informational"},
+          "properties": {"severity": "INFO"},
+          "locations": [
+            {"physicalLocation": {
+              "artifactLocation": {"uri": "deploy/svc.yaml"},
+              "region": {"startLine": 3}
+            }}
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "Vulnerabilities": [
+    {
+      "PackageName": "requests",
+      "PackageVersion": "2.19.1",
+      "Cve": "CVE-2018-18074",
+      "Severity": "Medium",
+      "Score": 5.9,
+      "RecommendedVersion": "2.20.0",
+      "Description": "Credentials leak on redirect",
+      "References": ["https://example.com/advisory"]
+    }
+  ]
+}

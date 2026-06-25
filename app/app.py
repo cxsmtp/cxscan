@@ -17,15 +17,16 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from .models import EngineThreshold, resolve_env
-from . import engines, normalize, preflight, pipeline, connections
+from . import engines, normalize, preflight, pipeline, connections, auth
 
 app = FastAPI(title="cxscan")
+app.add_middleware(auth.BasicAuthMiddleware)
 STATIC = Path(__file__).resolve().parent.parent / "static"
 RUNS: dict[str, dict] = {}            # scan_id -> state
 PARSERS = {"kics": ("sarif", normalize.parse_sarif, "kics"),
            "twoms": ("sarif", normalize.parse_sarif, "twoms"),
            "sca": ("json", normalize.parse_sca_json, None),
-           "sast": ("xml", normalize.parse_sast_xml, None)}
+           "sast": ("json", normalize.parse_sast_json, None)}
 
 
 class StartRequest(BaseModel):
@@ -168,7 +169,7 @@ class CxOneConn(BaseModel):
 @app.get("/api/connections")
 def get_connections():
     """Non-secret status of configured connections."""
-    return connections.status()
+    return {**connections.status(), "app_auth": auth.enabled()}
 
 
 @app.post("/api/connections/sast")
