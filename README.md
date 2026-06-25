@@ -69,6 +69,17 @@ export CXSCAN_AUTH_USER=admin CXSCAN_AUTH_PASSWORD=change-me
 ```
 This is a single shared credential (the floor) — swap for real SSO before hosted use.
 
+## GitHub auth (one-click)
+The Setup → Git card has an **Authenticate with GitHub** button (device flow) so users
+mint a token by approving a short code at github.com instead of pasting a PAT. It needs
+a GitHub OAuth App with **device flow enabled**; export its (non-secret) client id:
+```bash
+export GITHUB_OAUTH_CLIENT_ID=Iv1.xxxxxxxx
+```
+No client secret or redirect URL is required. The minted token is held in memory under
+`github.com` (same store as the manual token form). Without the env var the button is
+disabled and the manual URL+username+token form still works.
+
 ## Tests
 ```bash
 pip install -r requirements-dev.txt
@@ -82,7 +93,7 @@ podman build --build-arg TWOMS_VERSION=3.0.0 --build-arg KICS_VERSION=2.1.3 -t c
 podman run --rm -p 8080:8080 \
   -e GIT_USER -e GIT_TOKEN -e CXSAST_USER -e CXSAST_PASSWORD \
   -e CXSCA_TENANT -e CXSCA_USER -e CXSCA_PASSWORD \
-  -e CXSCAN_AUTH_USER -e CXSCAN_AUTH_PASSWORD \
+  -e CXSCAN_AUTH_USER -e CXSCAN_AUTH_PASSWORD -e GITHUB_OAUTH_CLIENT_ID \
   -v /opt/cx/ScaResolver:/opt/cx/ScaResolver:Z \
   -v /opt/cx/cxsast-cli:/opt/cx/cxsast-cli:Z \
   -v "$PWD/config.example.yaml":/srv/config.example.yaml:Z \

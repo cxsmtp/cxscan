@@ -137,6 +137,12 @@ def git_auth_for(repo_url: str) -> dict | None:
     return (_STORE.get("git") or {}).get(host)
 
 
+def store_git_token(host: str, username: str, token: str) -> None:
+    """Store git creds for a host (used by the GitHub OAuth device flow). Same
+    in-memory store the manual git form writes to."""
+    _STORE.setdefault("git", {})[host] = {"username": username, "token": token}
+
+
 # ---- accessors used by the scan runners --------------------------------------
 def get(name: str) -> dict | None:
     return _STORE.get(name)

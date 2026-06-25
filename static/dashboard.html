@@ -260,6 +260,9 @@
         <div class="field"><label>Token / PAT</label><input id="git-token" type="password" autocomplete="new-password"></div>
         <div class="row"><button id="git-connect">Test &amp; connect</button><span id="git-chip"></span></div>
         <div class="out" id="git-out">Token is used as the password over HTTPS. Stored per host.</div>
+        <div class="desc" style="margin-top:10px">— or —</div>
+        <div class="row"><button id="gh-oauth">Authenticate with GitHub</button><span id="gh-chip"></span></div>
+        <div class="out" id="gh-out">One-click device login for github.com — no PAT to paste.</div>
       </div>
     </div>
 
@@ -560,6 +563,43 @@ document.getElementById('git-connect').onclick=async()=>{
   }catch(e){chip(chipEl,false,"no backend");out.textContent="start the backend to test git auth";}
 };
 const sastUrl=document.getElementById('sast-url'),sastUser=document.getElementById('sast-user'),sastPass=document.getElementById('sast-pass');
+
+// ---- GitHub OAuth device flow ----
+let ghPoll=null;
+async function ghInit(){
+  try{const r=await fetch('/api/connections/git/github'); const j=await r.json();
+    const b=document.getElementById('gh-oauth');
+    if(!j.configured){ b.disabled=true;
+      document.getElementById('gh-out').innerHTML="set <b>GITHUB_OAUTH_CLIENT_ID</b> (register an OAuth App with device flow) to enable.";}
+  }catch(e){/* no backend */}
+}
+ghInit();
+document.getElementById('gh-oauth').onclick=async()=>{
+  const chipEl=document.getElementById('gh-chip'), out=document.getElementById('gh-out'), btn=document.getElementById('gh-oauth');
+  if(ghPoll){clearInterval(ghPoll); ghPoll=null;}
+  chipEl.className="pill"; chipEl.textContent="starting…";
+  try{
+    const r=await fetch('/api/connections/git/github/start',{method:'POST'}); const j=await r.json();
+    if(!j.ok){ chip(chipEl,false,"failed"); out.textContent=j.error||"could not start"; return; }
+    out.innerHTML=`Go to <a href="${j.verification_uri}" target="_blank" rel="noopener"><b>${j.verification_uri}</b></a> and enter code <b style="font-family:var(--mono);font-size:15px">${j.user_code}</b>`;
+    chipEl.textContent="waiting for approval…"; btn.disabled=true;
+    let interval=(j.interval||5)*1000;
+    const deadline=Date.now()+((j.expires_in||900)*1000);
+    const tick=async()=>{
+      if(Date.now()>deadline){ clearInterval(ghPoll); ghPoll=null; btn.disabled=false; chip(chipEl,false,"expired"); return; }
+      const p=await fetch('/api/connections/git/github/poll',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({device_code:j.device_code})});
+      const s=await p.json();
+      if(s.status==="connected"){ clearInterval(ghPoll); ghPoll=null; btn.disabled=false;
+        chip(chipEl,true,"connected"); out.innerHTML=`<b>${s.host}</b> — authenticated`;
+        document.getElementById('gitchip').textContent=`git auth: ${s.host} ✓`; loadConnections(); }
+      else if(s.status==="error"){ clearInterval(ghPoll); ghPoll=null; btn.disabled=false;
+        chip(chipEl,false,"failed"); out.textContent=s.error||"authorization failed"; }
+      else if(s.status==="slow_down"){ clearInterval(ghPoll); interval+=5000; ghPoll=setInterval(tick,interval); }
+    };
+    ghPoll=setInterval(tick,interval);
+  }catch(e){chip(chipEl,false,"no backend");out.textContent="start the backend to use GitHub auth";}
+};
 
 // ---- pipeline ----
 let curProvider="jenkins";

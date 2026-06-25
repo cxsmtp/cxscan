@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from .models import EngineThreshold, resolve_env
-from . import engines, normalize, preflight, pipeline, connections, auth
+from . import engines, normalize, preflight, pipeline, connections, auth, github_oauth
 
 app = FastAPI(title="cxscan")
 app.add_middleware(auth.BasicAuthMiddleware)
@@ -194,6 +194,28 @@ class GitConn(BaseModel):
 def connect_git(c: GitConn):
     """Validate git creds via ls-remote on the given repo; store by host."""
     return connections.git_test_and_store(c.repo_url, c.username, c.token)
+
+
+@app.get("/api/connections/git/github")
+def github_oauth_status():
+    """Whether the GitHub OAuth button is usable (client id configured)."""
+    return {"configured": github_oauth.configured()}
+
+
+@app.post("/api/connections/git/github/start")
+def github_oauth_start():
+    """Begin the GitHub device flow — returns a user code + verification URL."""
+    return github_oauth.start()
+
+
+class DeviceCode(BaseModel):
+    device_code: str
+
+
+@app.post("/api/connections/git/github/poll")
+def github_oauth_poll(c: DeviceCode):
+    """Poll once for the token; on success the github.com creds are stored."""
+    return github_oauth.poll(c.device_code)
 
 
 @app.get("/api/preflight")
