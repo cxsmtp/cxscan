@@ -84,6 +84,8 @@ def _run_scan(scan_id, raw_cfg):
             cfg["engines"]["sast"].update(
                 server_url=sast_conn["server_url"], username=sast_conn["username"],
                 password=sast_conn["password"])
+            if sast_conn.get("team_id") is not None:   # team picked in the UI
+                cfg["engines"]["sast"]["team_id"] = sast_conn["team_id"]
         cx = connections.get("cxone")
         if cx and "sca" in cfg["engines"]:
             cfg["engines"]["sca"].update(
@@ -182,6 +184,17 @@ def connect_sast(c: SastConn):
 def connect_cxone(c: CxOneConn):
     """Decode the API key, derive tenant+URLs, refresh a token, ping the tenant."""
     return connections.cxone_test_and_store(c.api_key)
+
+
+class SastTeam(BaseModel):
+    team_id: int
+    team_name: str | None = None
+
+
+@app.post("/api/connections/sast/team")
+def select_sast_team(t: SastTeam):
+    """Pick the CxSAST team SAST scans create the project under (UI click)."""
+    return connections.set_sast_team(t.team_id, t.team_name)
 
 
 class GitConn(BaseModel):

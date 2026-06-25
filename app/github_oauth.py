@@ -52,6 +52,9 @@ def start() -> dict:
             return {"ok": False, "error": r.get("error_description") or "device code request failed"}
         return {"ok": True, "device_code": r["device_code"], "user_code": r["user_code"],
                 "verification_uri": r["verification_uri"],
+                # GitHub returns a URL with the code embedded — open this so the
+                # user only has to click "Authorize", no copy/paste.
+                "verification_uri_complete": r.get("verification_uri_complete"),
                 "interval": r.get("interval", 5), "expires_in": r.get("expires_in", 900)}
     except Exception as e:
         return {"ok": False, "error": str(e)}

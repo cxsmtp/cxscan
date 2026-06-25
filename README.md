@@ -74,15 +74,23 @@ export CXSCAN_AUTH_USER=admin CXSCAN_AUTH_PASSWORD=change-me
 This is a single shared credential (the floor) — swap for real SSO before hosted use.
 
 ## GitHub auth (one-click)
-The Setup → Git card has an **Authenticate with GitHub** button (device flow) so users
-mint a token by approving a short code at github.com instead of pasting a PAT. It needs
-a GitHub OAuth App with **device flow enabled**; export its (non-secret) client id:
-```bash
-export GITHUB_OAUTH_CLIENT_ID=Iv1.xxxxxxxx
-```
-No client secret or redirect URL is required. The minted token is held in memory under
-`github.com` (same store as the manual token form). Without the env var the button is
-disabled and the manual URL+username+token form still works.
+The Setup → Git card has an **Authenticate with GitHub** button that opens github.com
+in your browser. Two modes, no setup required to start:
+- **No OAuth app (default):** the button opens GitHub's **token page with scopes
+  pre-filled** — generate a PAT, paste it into the Token field, Test & connect.
+- **OAuth app (smoothest):** register a GitHub OAuth App with **device flow enabled**
+  and export its (non-secret) client id — the button then opens github.com with the
+  code pre-filled and polls for the token automatically (no copy/paste):
+  ```bash
+  export GITHUB_OAUTH_CLIENT_ID=Iv1.xxxxxxxx
+  ```
+No client secret or redirect URL is ever needed. The token is held in memory under
+`github.com` (same store as the manual form).
+
+## CxSAST team selection
+After **Setup → CxSAST → Test & connect**, the teams are listed as **clickable** rows —
+click one to pick the team SAST scans create the project under (overrides the config
+`team_id`). The choice is held in memory and shown on the connection chip.
 
 ## Tests
 ```bash
