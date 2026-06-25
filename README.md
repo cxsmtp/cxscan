@@ -42,9 +42,13 @@ parsed to JSON internally), so "JSON to the dashboard, PDF for people" holds.
 
 ## Quickstart (local, no tenant needed)
 ```bash
-./run.sh                               # venv + deps + uvicorn on :8080
-# open http://localhost:8080 → Setup tab installs KICS + 2ms → Scan tab → Start scan
+./run.sh                               # macOS/Linux: venv + deps + uvicorn on :8080
 ```
+```powershell
+.\run.ps1                              # Windows PowerShell  (or: run.bat from cmd.exe)
+```
+On Windows, if PowerShell blocks the script: `powershell -ExecutionPolicy Bypass -File .\run.ps1`, or use `run.bat`.
+Then open http://localhost:8080 → Setup tab installs KICS + 2ms → Scan tab → Start scan.
 `config.local.yaml` enables only the OSS engines (KICS + 2ms), so you can run the
 whole flow end-to-end against a public repo with **no CxSAST/CxOne tenant and no git
 credentials**. Pass it from the Scan form, or set `config_path` in the API call.
